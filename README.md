@@ -14,7 +14,14 @@ Inspired by [piggly](https://github.com/kputnam/piggly) by kputnam — the origi
 ### Install
 
 ```bash
-pip install psycopg2-binary mysql-connector-python lxml
+# PostgreSQL only
+pip install "cover_me[postgres] @ git+https://github.com/verizonconnect/cover_me.git"
+
+# MySQL only
+pip install "cover_me[mysql] @ git+https://github.com/verizonconnect/cover_me.git"
+
+# Both engines
+pip install "cover_me[all] @ git+https://github.com/verizonconnect/cover_me.git"
 ```
 
 Or use Docker:
@@ -458,7 +465,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install cover_me
-        run: pip install psycopg2-binary mysql-connector-python lxml
+        run: pip install "cover_me[postgres] @ git+https://github.com/verizonconnect/cover_me.git"
 
       - name: Deploy schema
         run: psql -h localhost -U postgres -d mydb -f schema.sql
@@ -552,12 +559,12 @@ Integration tests skip automatically if database containers are not running.
 
 ## Dependencies
 
-| Package                  | Purpose                    |
-| ------------------------ | -------------------------- |
-| `psycopg2-binary`       | PostgreSQL connection      |
-| `mysql-connector-python` | MySQL connection           |
-| `lxml`                   | XML generation             |
-| `pytest`                 | Testing (dev only)         |
+| Package                  | Purpose                    | Install Extra |
+| ------------------------ | -------------------------- | ------------- |
+| `lxml`                   | XML generation             | (base)        |
+| `psycopg2-binary`       | PostgreSQL connection      | `[postgres]`  |
+| `mysql-connector-python` | MySQL connection           | `[mysql]`     |
+| `pytest`                 | Testing (dev only)         | —             |
 
 ## License
 

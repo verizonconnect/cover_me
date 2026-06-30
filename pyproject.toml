@@ -8,10 +8,13 @@ version = "0.1.0"
 description = "Database code coverage tool for PostgreSQL and MySQL"
 requires-python = ">=3.10"
 dependencies = [
-    "psycopg2-binary",
-    "mysql-connector-python",
     "lxml",
 ]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary"]
+mysql = ["mysql-connector-python"]
+all = ["psycopg2-binary", "mysql-connector-python"]
 
 [project.scripts]
 cover_me = "cover_me.cli:main"
