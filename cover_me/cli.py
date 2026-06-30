@@ -85,6 +85,8 @@ def _add_db_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-U", "--user", default="root")
     parser.add_argument("-W", "--password", default="")
     parser.add_argument("-c", "--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    parser.add_argument("-x", "--exclude-schemas", type=str, default="",
+                        help="Comma-separated list of schemas to exclude from instrumentation")
 
 
 def _connect(args):
@@ -102,8 +104,9 @@ def cmd_trace(args) -> None:
     conn = _connect(args)
     cache_dir = args.cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
+    exclude_schemas = [s.strip() for s in args.exclude_schemas.split(",") if s.strip()]
 
-    procedures = mod["dump"](conn)
+    procedures = mod["dump"](conn, exclude_schemas=exclude_schemas) if engine == "postgres" else mod["dump"](conn)
     if not procedures:
         print("No stored procedures/functions found.", file=sys.stderr)
         conn.close()
@@ -159,8 +162,9 @@ def cmd_report(args) -> None:
     mod = _get_engine_modules(engine)
     conn = _connect(args)
     cache_dir = args.cache_dir
+    exclude_schemas = [s.strip() for s in args.exclude_schemas.split(",") if s.strip()]
 
-    procedures = mod["dump"](conn)
+    procedures = mod["dump"](conn, exclude_schemas=exclude_schemas) if engine == "postgres" else mod["dump"](conn)
     if not procedures:
         print("No stored procedures/functions found.", file=sys.stderr)
         conn.close()

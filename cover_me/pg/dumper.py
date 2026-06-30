@@ -17,9 +17,11 @@ SELECT
     pro.prosecdef     AS secdef,
     pro.provolatile   AS volatility,
     pro.proretset     AS setof,
+    pro.prokind       AS kind,
     format_type(pro.prorettype, NULL) AS return_type,
     pro.prosrc        AS source,
     pro.pronargs      AS arg_count,
+    pro.pronargdefaults AS num_defaults,
     COALESCE(array_to_string(pro.proargmodes, ','), '') AS arg_modes,
     COALESCE(array_to_string(pro.proargnames, ','), '') AS arg_names,
     COALESCE(
@@ -31,17 +33,20 @@ SELECT
                 ',')
         ELSE
             oidvectortypes(pro.proargtypes)
-        END, '') AS arg_types
+        END, '') AS arg_types,
+    pg_get_function_arguments(pro.oid) AS full_arg_string
 FROM pg_proc AS pro
 JOIN pg_namespace AS nschema ON pro.pronamespace = nschema.oid
 WHERE pro.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
-  AND pro.proname NOT LIKE 'cover_me_%'
-  AND nschema.nspname NOT LIKE 'pg_%'
+  AND pro.proname NOT LIKE 'cover_me_%%'
+  AND nschema.nspname NOT LIKE 'pg_%%'
   AND nschema.nspname <> 'information_schema'
   AND nschema.nspname <> 'public'
+  AND nschema.nspname <> 'cover_me'
   AND pro.pronamespace NOT IN (
       SELECT oid FROM pg_namespace WHERE nspname IN ('pgtap', 'tap')
   )
+  AND nschema.nspname NOT IN (SELECT unnest(string_to_array(%s, ',')))
 ORDER BY nschema.nspname, pro.proname;
 """
 
@@ -54,6 +59,9 @@ def _parse_row(row: dict) -> ProcedureDef:
     names = [n.strip() for n in row["arg_names"].split(",") if n.strip()] if row["arg_names"] else []
     types = [t.strip() for t in row["arg_types"].split(",") if t.strip()] if row["arg_types"] else []
 
+    # prokind: 'f' = function, 'p' = procedure, 'a' = aggregate, 'w' = window
+    is_procedure = row["kind"] == "p"
+
     return ProcedureDef(
         oid=row["oid"],
         schema=row["schema"],
@@ -62,17 +70,22 @@ def _parse_row(row: dict) -> ProcedureDef:
         is_strict=row["strict"],
         is_secdef=row["secdef"],
         is_setof=row["setof"],
+        is_procedure=is_procedure,
         return_type=row["return_type"],
         volatility=_VOLATILITY_MAP.get(row["volatility"], "VOLATILE"),
         arg_modes=modes,
         arg_names=names,
         arg_types=types,
+        arg_defaults=row["full_arg_string"] if int(row["num_defaults"]) > 0 else None,
     )
 
 
-def dump_procedures(connection) -> list[ProcedureDef]:
+def dump_procedures(connection, exclude_schemas: list[str] | None = None) -> list[ProcedureDef]:
     """Fetch all PL/pgSQL procedures from the database."""
+    if exclude_schemas is None:
+        exclude_schemas = []
+    exclude_csv = ",".join(exclude_schemas) if exclude_schemas else ""
     with connection.cursor() as cur:
-        cur.execute(DUMP_SQL)
+        cur.execute(DUMP_SQL, (exclude_csv,))
         columns = [desc[0] for desc in cur.description]
         return [_parse_row(dict(zip(columns, row))) for row in cur.fetchall()]
