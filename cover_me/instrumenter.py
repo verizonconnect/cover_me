@@ -170,11 +170,11 @@ _TRACE_PREFIX = "COVER_ME"
 
 
 def _pg_raise_branch(tag_id: str) -> str:
-    return f"PERFORM public.cover_me_branch('{tag_id}'); "
+    return f"PERFORM cover_me.branch('{tag_id}'); "
 
 
 def _pg_wrap_cond(tag_id: str, condition: str) -> str:
-    return f"public.cover_me_cond('{tag_id}', ({condition}))"
+    return f"cover_me.cond('{tag_id}', ({condition}))"
 
 
 def _mysql_raise_branch(tag_id: str) -> str:
@@ -433,6 +433,8 @@ def instrument(source: str, oid: str, engine: str = "postgres") -> InstrumentRes
                 if i < len(tokens) and tokens[i].type == TokenType.OTHER and not tokens[i].value.strip():
                     result_parts.append(tokens[i].value)
                     i += 1
+                else:
+                    result_parts.append("\n    ")
                 result_parts.append(raise_branch(tag_id))
             continue
 
@@ -446,6 +448,8 @@ def instrument(source: str, oid: str, engine: str = "postgres") -> InstrumentRes
             if i < len(tokens) and tokens[i].type == TokenType.OTHER and not tokens[i].value.strip():
                 result_parts.append(tokens[i].value)
                 i += 1
+            else:
+                result_parts.append("\n    ")
             result_parts.append(raise_branch(tag_id))
             continue
 

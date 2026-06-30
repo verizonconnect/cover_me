@@ -21,6 +21,8 @@ class ProcedureDef:
     arg_modes: list[str]
     arg_names: list[str]
     arg_types: list[str]
+    is_procedure: bool = False
+    arg_defaults: list[str] | None = None
 
     @property
     def qualified_name(self) -> str:
@@ -53,9 +55,11 @@ def cache_source(proc: ProcedureDef, cache_dir: Path) -> Path:
         "is_strict": proc.is_strict,
         "is_secdef": proc.is_secdef,
         "is_setof": proc.is_setof,
+        "is_procedure": proc.is_procedure,
         "arg_modes": proc.arg_modes,
         "arg_names": proc.arg_names,
         "arg_types": proc.arg_types,
+        "arg_defaults": proc.arg_defaults,
     }, indent=2))
 
     return source_path
