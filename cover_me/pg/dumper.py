@@ -8,6 +8,10 @@ _VOLATILITY_MAP = {"i": "IMMUTABLE", "v": "VOLATILE", "s": "STABLE"}
 _MODE_MAP = {"i": "IN", "o": "OUT", "b": "INOUT", "v": "VARIADIC", "t": "TABLE"}
 
 # Query to fetch all PL/pgSQL functions (excluding cover_me helpers)
+# Excludes STABLE/IMMUTABLE functions — these are candidates for PostgreSQL
+# inlining and instrumentation breaks their behaviour when combined with
+# pgtap_fake_function (which replaces dependencies at test time).
+# Only VOLATILE functions and procedures are safe to instrument.
 DUMP_SQL = """
 SELECT
     pro.oid::text,
@@ -47,6 +51,7 @@ WHERE pro.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
       SELECT oid FROM pg_namespace WHERE nspname IN ('pgtap', 'tap')
   )
   AND nschema.nspname NOT IN (SELECT unnest(string_to_array(%s, ',')))
+  AND (pro.provolatile = 'v' OR pro.prokind = 'p')
 ORDER BY nschema.nspname, pro.proname;
 """
 

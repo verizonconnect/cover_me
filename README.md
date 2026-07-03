@@ -95,13 +95,14 @@ Tag IDs are deterministic — `md5(oid:line:keyword)[:16]` — so the same sourc
 | Aspect              | Postgres                                    | MySQL                                        |
 | -------------------- | ------------------------------------------- | -------------------------------------------- |
 | Trace mechanism      | `RAISE WARNING` (survives ROLLBACK)         | `INSERT INTO cover_me.trace` (MyISAM — survives ROLLBACK) |
-| Condition wrapper    | `cover_me_cond(tag, condition)` function    | `cover_me.cover_me_cond(tag, condition)` function |
-| Branch tracker       | `PERFORM cover_me_branch(tag)`              | `INSERT INTO cover_me.trace (tag_id) VALUES (tag)` |
+| Condition wrapper    | `cover_me.cond(tag, condition)` function    | `cover_me.cover_me_cond(tag, condition)` function |
+| Branch tracker       | `PERFORM cover_me.branch(tag)`              | `INSERT INTO cover_me.trace (tag_id) VALUES (tag)` |
 | Source query         | `pg_proc.prosrc`                            | `information_schema.ROUTINES.ROUTINE_DEFINITION` |
 | Replace mechanism    | `CREATE OR REPLACE FUNCTION`                | `DROP` + `CREATE` (via cached `SHOW CREATE`) |
-| Helper location      | `public` schema                             | `cover_me` database                          |
+| Helper location      | `cover_me` schema (EXECUTE revoked from PUBLIC) | `cover_me` database                     |
 | Trace capture        | stderr file (`2> trace.txt`)                | MyISAM trace table (queried directly)        |
 | DECLARE handling     | Injection after `BEGIN`                     | Injection after all `DECLARE` statements     |
+| Function filter      | VOLATILE only (STABLE/IMMUTABLE excluded)   | All functions                                |
 
 ---
 
@@ -132,6 +133,7 @@ cover_me <command> [options]
 | `-c`, `--cache-dir`| Cache directory for original source     | `/coverage/cache`    |
 | `-f`, `--file`    | Trace file path (report, Postgres only)  | none                 |
 | `-o`, `--output`  | Output path for OpenCover XML            | `/coverage/opencover.xml` |
+| `-x`, `--exclude` | Comma-separated schemas to exclude (trace/report) | none        |
 
 ---
 
@@ -139,12 +141,14 @@ cover_me <command> [options]
 
 ### How Postgres Tracing Works
 
-cover_me installs two helper functions in the `public` schema:
+cover_me installs helper functions in a dedicated `cover_me` schema (with `EXECUTE` revoked from `PUBLIC`):
 
-- `cover_me_branch(tag TEXT)` — emits `RAISE WARNING 'COVER %, %', tag, 1`
-- `cover_me_cond(tag TEXT, cond BOOLEAN)` — emits `RAISE WARNING 'COVER %, %', tag, cond::int` and returns the condition value
+- `cover_me.branch(tag TEXT)` — emits `RAISE WARNING 'COVER_ME %', tag`
+- `cover_me.cond(tag TEXT, cond BOOLEAN)` — emits `RAISE WARNING 'COVER_ME % t/f', tag` and returns the condition value
 
 Because `RAISE WARNING` writes to stderr and is not transactional, coverage data survives even when tests use `ROLLBACK` (as pgTAP does).
+
+Only VOLATILE functions and procedures are instrumented. STABLE and IMMUTABLE functions are excluded automatically — they are typically inlined by the planner and do not represent testable procedural logic.
 
 ### Step-by-Step: Postgres with pgTAP
 
@@ -223,7 +227,8 @@ open ./coverage/html/index.html
 - **stderr capture is required** — The trace file is just the stderr output from whatever process exercises the functions. If you forget `2> trace.txt`, you'll get 0% coverage.
 - **Multiple test runs** — You can append multiple runs to the same trace file (`2>> trace.txt`) before generating the report.
 - **pgTAP compatibility** — pgTAP wraps each test in a transaction that rolls back. `RAISE WARNING` is not transactional, so all coverage hits are preserved.
-- **Schema filtering** — cover_me instruments all user-defined functions in the database (excluding system schemas). If you need to exclude specific schemas, filter them at the database level by not granting access.
+- **Schema filtering** — Use the `-x` flag to exclude schemas from instrumentation (comma-separated): `cover_me trace -x partman,postgis,utility ...`. Only VOLATILE functions and procedures are instrumented; STABLE and IMMUTABLE functions are always excluded.
+- **Security** — Helper functions are installed in a dedicated `cover_me` schema with `EXECUTE` revoked from `PUBLIC`. The superuser running the trace has implicit access. This avoids tripping permission-auditing tests (e.g. checks that `PUBLIC` has no function access outside whitelisted schemas).
 - **Concurrent connections** — Multiple connections can exercise instrumented functions simultaneously. All `RAISE WARNING` output goes to the connection's stderr, so ensure all connections' stderr is captured.
 
 ### Postgres: Docker Compose Integration
