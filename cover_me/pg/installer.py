@@ -5,10 +5,9 @@ from pathlib import Path
 from cover_me.models import ProcedureDef, load_cached_source, load_cached_meta
 
 
-# Helper functions installed in public schema for coverage tracking
+# Helper functions installed in cover_me schema for coverage tracking
 HELPER_SQL = """
 CREATE SCHEMA IF NOT EXISTS cover_me;
-GRANT USAGE ON SCHEMA cover_me TO PUBLIC;
 
 CREATE OR REPLACE FUNCTION cover_me.cond(message VARCHAR, value BOOLEAN)
   RETURNS BOOLEAN AS $$
@@ -33,16 +32,16 @@ BEGIN
   RAISE WARNING 'COVER_ME % %', message, signal;
 END $$ LANGUAGE plpgsql VOLATILE;
 
-GRANT EXECUTE ON FUNCTION cover_me.cond(VARCHAR, BOOLEAN) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION cover_me.branch(VARCHAR) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION cover_me.signal(VARCHAR, VARCHAR) TO PUBLIC;
+REVOKE EXECUTE ON FUNCTION cover_me.cond(VARCHAR, BOOLEAN) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION cover_me.branch(VARCHAR) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION cover_me.signal(VARCHAR, VARCHAR) FROM PUBLIC;
 """
 
 DROP_HELPERS_SQL = """
 DROP FUNCTION IF EXISTS cover_me.cond(VARCHAR, BOOLEAN);
 DROP FUNCTION IF EXISTS cover_me.branch(VARCHAR);
 DROP FUNCTION IF EXISTS cover_me.signal(VARCHAR, VARCHAR);
-DROP SCHEMA IF EXISTS cover_me;
+DROP SCHEMA IF EXISTS cover_me CASCADE;
 """
 
 
