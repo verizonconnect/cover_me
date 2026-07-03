@@ -321,6 +321,24 @@ def instrument(source: str, oid: str, engine: str = "postgres") -> InstrumentRes
 
         # --- IF condition ---
         if tok.type == TokenType.KEYWORD and tok.value == "if":
+            # Check if this IF is part of DDL (CREATE ... IF NOT EXISTS, DROP ... IF EXISTS)
+            # Look at the current statement — find text back to the last semicolon
+            recent_text = ''.join(result_parts[-40:]).lower()
+            # Find the last semicolon to isolate the current statement
+            last_semi = recent_text.rfind(';')
+            if last_semi >= 0:
+                current_stmt = recent_text[last_semi + 1:]
+            else:
+                current_stmt = recent_text
+            # Check if current statement contains DDL keywords before our IF
+            current_words = current_stmt.split()
+            is_ddl_if = any(w in ("create", "drop", "alter") for w in current_words)
+            if is_ddl_if:
+                # Pass through — not a control flow IF
+                result_parts.append(tok.value)
+                i += 1
+                continue
+
             result_parts.append(tok.value)
             i += 1
             # Collect everything until THEN
