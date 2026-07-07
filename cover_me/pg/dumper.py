@@ -12,6 +12,14 @@ _MODE_MAP = {"i": "IN", "o": "OUT", "b": "INOUT", "v": "VARIADIC", "t": "TABLE"}
 # inlining and instrumentation breaks their behaviour when combined with
 # pgtap_fake_function (which replaces dependencies at test time).
 # Only VOLATILE functions and procedures are safe to instrument.
+#
+# Hardcoded exclusions (system/internal only):
+#   - pg_* (system schemas)
+#   - information_schema (system catalog)
+#   - cover_me (our own instrumentation schema)
+#
+# All other exclusions (public, pgtap, tap, postgis, etc.) are the
+# responsibility of the repo's .cover_me configuration file.
 DUMP_SQL = """
 SELECT
     pro.oid::text,
@@ -45,11 +53,7 @@ WHERE pro.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
   AND pro.proname NOT LIKE 'cover_me_%%'
   AND nschema.nspname NOT LIKE 'pg_%%'
   AND nschema.nspname <> 'information_schema'
-  AND nschema.nspname <> 'public'
   AND nschema.nspname <> 'cover_me'
-  AND pro.pronamespace NOT IN (
-      SELECT oid FROM pg_namespace WHERE nspname IN ('pgtap', 'tap')
-  )
   AND nschema.nspname NOT IN (SELECT unnest(string_to_array(%s, ',')))
   AND (pro.provolatile = 'v' OR pro.prokind = 'p')
 ORDER BY nschema.nspname, pro.proname;
