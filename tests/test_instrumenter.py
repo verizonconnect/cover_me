@@ -73,7 +73,7 @@ class TestSimpleIf:
   END IF;
 END;"""
         result = instrument(source, OID)
-        assert "cover_me_cond(" in result.source
+        assert "cover_me.cond(" in result.source
         assert "x > 0" in result.source
         branch_tags = [t for t in result.tags if t.tag_type == TagType.BRANCH]
         assert len(branch_tags) >= 1
@@ -96,8 +96,8 @@ END;"""
   END IF;
 END;"""
         result = instrument(source, OID)
-        assert result.source.count("cover_me_cond(") == 1
-        assert result.source.count("cover_me_branch(") >= 1
+        assert result.source.count("cover_me.cond(") == 1
+        assert result.source.count("cover_me.branch(") >= 1
         # Should have branch tags for IF cond + ELSE + BEGIN block
         branch_tags = [t for t in result.tags if t.tag_type == TagType.BRANCH]
         assert len(branch_tags) >= 2
@@ -116,7 +116,7 @@ END;"""
 END;"""
         result = instrument(source, OID)
         # IF + 2 ELSIF = 3 conditions
-        assert result.source.count("cover_me_cond(") == 3
+        assert result.source.count("cover_me.cond(") == 3
         # ELSE block
         else_branches = [t for t in result.tags if t.description == "ELSE branch"]
         assert len(else_branches) == 1
@@ -137,7 +137,7 @@ class TestNestedIf:
   END IF;
 END;"""
         result = instrument(source, OID)
-        cond_count = result.source.count("cover_me_cond(")
+        cond_count = result.source.count("cover_me.cond(")
         assert cond_count == 2
 
 
@@ -154,7 +154,7 @@ class TestWhileLoop:
   END LOOP;
 END;"""
         result = instrument(source, OID)
-        assert "cover_me_cond(" in result.source
+        assert "cover_me.cond(" in result.source
         assert "count > 10" in result.source
         loop_tags = [t for t in result.tags if t.tag_type == TagType.LOOP]
         assert len(loop_tags) >= 1
@@ -167,7 +167,7 @@ END;"""
 END;"""
         result = instrument(source, OID)
         assert "count > 10 AND true" in result.source
-        assert "cover_me_cond(" in result.source
+        assert "cover_me.cond(" in result.source
 
     def test_while_with_label(self):
         source = """BEGIN
@@ -177,7 +177,7 @@ END;"""
   END LOOP my_label;
 END;"""
         result = instrument(source, OID)
-        assert "cover_me_cond(" in result.source
+        assert "cover_me.cond(" in result.source
         assert "NOT n = 10" in result.source
 
 
@@ -196,7 +196,7 @@ END;"""
         result = instrument(source, OID)
         loop_tags = [t for t in result.tags if t.tag_type == TagType.LOOP]
         assert len(loop_tags) >= 1
-        assert "cover_me_branch(" in result.source
+        assert "cover_me.branch(" in result.source
 
     def test_for_reverse(self):
         source = """BEGIN
@@ -277,7 +277,7 @@ END;"""
         exit_tags = [t for t in result.tags if "EXIT" in t.description]
         assert len(exit_tags) == 1
         # Branch inject should appear before EXIT
-        idx_branch = result.source.index("cover_me_branch(")
+        idx_branch = result.source.index("cover_me.branch(")
         idx_exit = result.source.index("exit")
         assert idx_branch < idx_exit
 
@@ -560,5 +560,5 @@ END;"""
         # Verify source is still valid-looking (no broken syntax)
         lower_src = result.source.lower()
         assert lower_src.count("begin") >= 2  # outer + exception block
-        assert "cover_me_cond(" in result.source
-        assert "cover_me_branch(" in result.source
+        assert "cover_me.cond(" in result.source
+        assert "cover_me.branch(" in result.source
