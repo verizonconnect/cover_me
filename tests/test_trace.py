@@ -64,16 +64,19 @@ class TestParseRow:
         row = {
             "oid": "12345", "schema": "public", "name": "my_func",
             "strict": False, "secdef": False, "volatility": "v",
-            "setof": False, "return_type": "void",
+            "setof": False, "kind": "f", "return_type": "void",
             "source": "  BEGIN\n  END;  ",
-            "arg_count": "2", "arg_modes": "i,i",
+            "arg_count": "2", "num_defaults": "0",
+            "arg_modes": "i,i",
             "arg_names": "a,b", "arg_types": "integer,text",
+            "full_arg_string": "a integer, b text",
         }
         proc = _parse_row(row)
         assert proc.oid == "12345"
         assert proc.schema == "public"
         assert proc.source == "BEGIN\n  END;"  # stripped
         assert proc.volatility == "VOLATILE"
+        assert proc.is_procedure is False
         assert proc.arg_modes == ["IN", "IN"]
         assert proc.arg_names == ["a", "b"]
         assert proc.arg_types == ["integer", "text"]
@@ -82,15 +85,49 @@ class TestParseRow:
         row = {
             "oid": "99", "schema": "s", "name": "f",
             "strict": True, "secdef": False, "volatility": "i",
-            "setof": False, "return_type": "integer",
+            "setof": False, "kind": "f", "return_type": "integer",
             "source": "BEGIN RETURN 1; END;",
-            "arg_count": "0", "arg_modes": "", "arg_names": "", "arg_types": "",
+            "arg_count": "0", "num_defaults": "0",
+            "arg_modes": "", "arg_names": "", "arg_types": "",
+            "full_arg_string": "",
         }
         proc = _parse_row(row)
         assert proc.arg_modes == []
         assert proc.arg_names == []
         assert proc.volatility == "IMMUTABLE"
         assert proc.is_strict is True
+        assert proc.is_procedure is False
+
+    def test_procedure(self):
+        row = {
+            "oid": "200", "schema": "command", "name": "add_record",
+            "strict": False, "secdef": False, "volatility": "v",
+            "setof": False, "kind": "p", "return_type": "void",
+            "source": "BEGIN INSERT INTO t VALUES (1); END;",
+            "arg_count": "1", "num_defaults": "0",
+            "arg_modes": "i",
+            "arg_names": "par_id", "arg_types": "integer",
+            "full_arg_string": "par_id integer",
+        }
+        proc = _parse_row(row)
+        assert proc.is_procedure is True
+        assert proc.schema == "command"
+        assert proc.arg_names == ["par_id"]
+
+    def test_with_defaults(self):
+        row = {
+            "oid": "300", "schema": "query", "name": "get_data",
+            "strict": False, "secdef": False, "volatility": "v",
+            "setof": True, "kind": "f", "return_type": "record",
+            "source": "BEGIN RETURN QUERY SELECT 1; END;",
+            "arg_count": "2", "num_defaults": "1",
+            "arg_modes": "i,i",
+            "arg_names": "par_id,par_limit", "arg_types": "integer,integer",
+            "full_arg_string": "par_id integer, par_limit integer DEFAULT 100",
+        }
+        proc = _parse_row(row)
+        assert proc.arg_defaults == "par_id integer, par_limit integer DEFAULT 100"
+        assert proc.is_setof is True
 
 
 # ---------------------------------------------------------------------------
