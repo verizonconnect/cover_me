@@ -133,7 +133,8 @@ cover_me <command> [options]
 | `-c`, `--cache-dir`| Cache directory for original source     | `/coverage/cache`    |
 | `-f`, `--file`    | Trace file path (report, Postgres only)  | none                 |
 | `-o`, `--output`  | Output path for OpenCover XML            | `/coverage/opencover.xml` |
-| `-x`, `--exclude` | Comma-separated schemas to exclude (trace/report) | none        |
+| `-x`, `--exclude` | Comma-separated schemas to exclude (additive to .cover_me config) | none        |
+| `--config`        | Path to .cover_me config file             | `.cover_me` in CWD  |
 
 ---
 
@@ -227,7 +228,7 @@ open ./coverage/html/index.html
 - **stderr capture is required** — The trace file is just the stderr output from whatever process exercises the functions. If you forget `2> trace.txt`, you'll get 0% coverage.
 - **Multiple test runs** — You can append multiple runs to the same trace file (`2>> trace.txt`) before generating the report.
 - **pgTAP compatibility** — pgTAP wraps each test in a transaction that rolls back. `RAISE WARNING` is not transactional, so all coverage hits are preserved.
-- **Schema filtering** — Use the `-x` flag to exclude schemas from instrumentation (comma-separated): `cover_me trace -x partman,postgis,utility ...`. Only VOLATILE functions and procedures are instrumented; STABLE and IMMUTABLE functions are always excluded.
+- **Schema filtering** — Use a `.cover_me` TOML config file in your repo root to exclude schemas from instrumentation. The file uses a `[excluded_schemas]` section with a `names` array. The `-x` CLI flag is additive to the config file. Only `pg_*`, `information_schema`, and `cover_me` are excluded by default — all other exclusions (including `public`, `pgtap`, `tap`, extension schemas) are the responsibility of the repo owner. Only VOLATILE functions and procedures are instrumented; STABLE and IMMUTABLE functions are always excluded.
 - **Security** — Helper functions are installed in a dedicated `cover_me` schema with `EXECUTE` revoked from `PUBLIC`. The superuser running the trace has implicit access. This avoids tripping permission-auditing tests (e.g. checks that `PUBLIC` has no function access outside whitelisted schemas).
 - **Concurrent connections** — Multiple connections can exercise instrumented functions simultaneously. All `RAISE WARNING` output goes to the connection's stderr, so ensure all connections' stderr is captured.
 
@@ -504,6 +505,33 @@ sonar.coverageReportPaths=coverage/opencover.xml
 
 ---
 
+## Configuration File (`.cover_me`)
+
+Place a `.cover_me` file in your repository root to configure cover_me. The file uses TOML format.
+
+### Schema Exclusions
+
+```toml
+# .cover_me — cover_me configuration for this database repository
+
+[excluded_schemas]
+names = [
+    "partman",
+    "pgtap",
+    "public",
+]
+```
+
+### Behaviour
+
+- **Hardcoded exclusions (always, not configurable):** `pg_*`, `information_schema`, `cover_me`
+- **Everything else** — including `public`, `pgtap`, `tap`, and extension schemas — is the repo owner's responsibility to exclude via this file.
+- The `-x` CLI flag is **additive** to the config file — schemas from both sources are merged.
+- If no `.cover_me` file is found, only the hardcoded exclusions apply.
+- Pass `--config /path/to/.cover_me` to use a file from a non-default location.
+
+---
+
 ## Troubleshooting
 
 | Problem | Cause | Solution |
@@ -567,7 +595,7 @@ Integration tests skip automatically if database containers are not running.
 | Package                  | Purpose                    | Install Extra |
 | ------------------------ | -------------------------- | ------------- |
 | `lxml`                   | XML generation             | (base)        |
-| `psycopg2-binary`       | PostgreSQL connection      | `[postgres]`  |
+| `psycopg2-binary`        | PostgreSQL connection      | `[postgres]`  |
 | `mysql-connector-python` | MySQL connection           | `[mysql]`     |
 | `pytest`                 | Testing (dev only)         | —             |
 

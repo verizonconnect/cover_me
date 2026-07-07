@@ -8,6 +8,7 @@ Commands:
 """
 import argparse
 import sys
+import tomllib
 from pathlib import Path
 
 from cover_me.instrumenter import instrument
@@ -18,6 +19,45 @@ from cover_me.html_reporter import generate_html
 
 DEFAULT_CACHE_DIR = Path("/coverage/cache")
 DEFAULT_OUTPUT_DIR = Path("/coverage")
+
+
+def _load_config_file(config_path: Path | None = None) -> dict:
+    """Load .cover_me TOML configuration file.
+
+    Resolution order:
+        1. Explicit path passed via --config
+        2. .cover_me in the current working directory
+
+    Returns the parsed TOML dict, or an empty dict if no file found.
+    """
+    if config_path and config_path.is_file():
+        path = config_path
+    else:
+        path = Path.cwd() / ".cover_me"
+        if not path.is_file():
+            return {}
+
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _get_excluded_schemas(args) -> list[str]:
+    """Merge excluded schemas from .cover_me config file and -x CLI flag.
+
+    Sources (additive):
+        1. [excluded_schemas].names from the config file
+        2. Comma-separated values from --exclude-schemas (-x)
+    """
+    config = _load_config_file(getattr(args, "config", None))
+    schemas = list(config.get("excluded_schemas", {}).get("names", []))
+
+    # Merge CLI -x (additive)
+    cli_excludes = [s.strip() for s in args.exclude_schemas.split(",") if s.strip()]
+    for s in cli_excludes:
+        if s not in schemas:
+            schemas.append(s)
+
+    return schemas
 
 
 def _connect_pg(args):
@@ -86,7 +126,9 @@ def _add_db_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-W", "--password", default="")
     parser.add_argument("-c", "--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("-x", "--exclude-schemas", type=str, default="",
-                        help="Comma-separated list of schemas to exclude from instrumentation")
+                        help="Comma-separated list of schemas to exclude (additive to .cover_me config)")
+    parser.add_argument("--config", type=Path, default=None,
+                        help="Path to .cover_me config file (default: .cover_me in current directory)")
 
 
 def _connect(args):
@@ -104,7 +146,10 @@ def cmd_trace(args) -> None:
     conn = _connect(args)
     cache_dir = args.cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
-    exclude_schemas = [s.strip() for s in args.exclude_schemas.split(",") if s.strip()]
+    exclude_schemas = _get_excluded_schemas(args)
+
+    if exclude_schemas:
+        print(f"Excluding schemas: {', '.join(exclude_schemas)}")
 
     procedures = mod["dump"](conn, exclude_schemas=exclude_schemas) if engine == "postgres" else mod["dump"](conn)
     if not procedures:
@@ -162,7 +207,7 @@ def cmd_report(args) -> None:
     mod = _get_engine_modules(engine)
     conn = _connect(args)
     cache_dir = args.cache_dir
-    exclude_schemas = [s.strip() for s in args.exclude_schemas.split(",") if s.strip()]
+    exclude_schemas = _get_excluded_schemas(args)
 
     procedures = mod["dump"](conn, exclude_schemas=exclude_schemas) if engine == "postgres" else mod["dump"](conn)
     if not procedures:
