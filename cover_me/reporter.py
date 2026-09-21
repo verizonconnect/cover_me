@@ -160,3 +160,114 @@ def _add_module_summary(module_el: Element) -> None:
     summary_el.set("branchCoverage", f"{visited_branch / total_branch * 100:.2f}" if total_branch else "0")
 
     module_el.insert(0, summary_el)
+
+
+# ---------------------------------------------------------------------------
+# SonarQube Generic Coverage XML
+#
+# Reference format:
+#   <coverage version="1">
+#     <file path="relative/path/to/file.sql">
+#       <lineToCover lineNumber="11" covered="true"/>
+#       <lineToCover lineNumber="13" covered="true" branchesToCover="2" coveredBranches="1"/>
+#     </file>
+#   </coverage>
+#
+# SonarQube rejects absolute paths, so file paths are emitted relative to a
+# project root. Sequence points and branch points are aggregated by line
+# number into a single <lineToCover> element per line.
+# ---------------------------------------------------------------------------
+
+
+def _sonar_relative_path(full_path: Path, project_root: Path | None) -> str:
+    """Convert an absolute source path into a path relative to project_root.
+
+    SonarQube rejects absolute paths. When a project_root is supplied we make
+    the path relative to it; otherwise we fall back to the current working
+    directory, and finally to stripping the leading anchor so the result is
+    never absolute.
+    """
+    full_path = Path(full_path)
+    roots = [r for r in (project_root, Path.cwd()) if r is not None]
+    for root in roots:
+        try:
+            return Path(full_path).resolve().relative_to(Path(root).resolve()).as_posix()
+        except ValueError:
+            continue
+    # Last resort: strip the anchor (drive/leading slash) so it isn't absolute.
+    if full_path.is_absolute():
+        return full_path.relative_to(full_path.anchor).as_posix()
+    return full_path.as_posix()
+
+
+def generate_sonar(
+    procedures: list[ProcedureDef],
+    tags_by_oid: dict[str, list[Tag]],
+    profile: Profile,
+    output_path: Path,
+    source_dir: Path | None = None,
+    project_root: Path | None = None,
+) -> None:
+    """Generate a SonarQube Generic Coverage XML report.
+
+    Aggregates the profile's sequence points (BLOCK/BRANCH/LOOP) and branch
+    points (BRANCH/LOOP) by line number, producing one <lineToCover> per
+    covered source line per file.
+    """
+    root = Element("coverage")
+    root.set("version", "1")
+
+    for proc in sorted(procedures, key=lambda p: (p.schema, p.name)):
+        proc_tags = tags_by_oid.get(proc.oid, [])
+        if not proc_tags:
+            continue
+
+        # Resolve the file path SonarQube will report against.
+        if source_dir is not None:
+            full_path = source_dir / proc.schema / f"{proc.name}.sql"
+            rel_path = _sonar_relative_path(full_path, project_root)
+        else:
+            rel_path = f"{proc.schema}/{proc.name}.sql"
+
+        # Aggregate coverage by line number.
+        # covered_lines: line -> covered (bool)
+        # branches: line -> [branches_to_cover, covered_branches]
+        covered_lines: dict[int, bool] = {}
+        branches: dict[int, list[int]] = {}
+
+        for tag in proc_tags:
+            if tag.tag_type not in (TagType.BLOCK, TagType.BRANCH, TagType.LOOP):
+                continue
+            tp = profile.get(tag.id)
+            visited = bool(tp and tp.visit_count > 0)
+            covered_lines[tag.line] = covered_lines.get(tag.line, False) or visited
+
+            # Conditional tags contribute branch coverage. Each branch tag has
+            # two outcomes (true/false); count both as branches to cover.
+            if tag.tag_type in (TagType.BRANCH, TagType.LOOP):
+                to_cover, covered = branches.get(tag.line, [0, 0])
+                to_cover += 2
+                if tp:
+                    covered += (1 if tp.true_count > 0 else 0)
+                    covered += (1 if tp.false_count > 0 else 0)
+                branches[tag.line] = [to_cover, covered]
+
+        if not covered_lines:
+            continue
+
+        file_el = SubElement(root, "file")
+        file_el.set("path", rel_path)
+
+        for line in sorted(covered_lines):
+            line_el = SubElement(file_el, "lineToCover")
+            line_el.set("lineNumber", str(line))
+            line_el.set("covered", "true" if covered_lines[line] else "false")
+            if line in branches:
+                to_cover, covered = branches[line]
+                line_el.set("branchesToCover", str(to_cover))
+                line_el.set("coveredBranches", str(covered))
+
+    indent(root, space="  ")
+    tree = ElementTree(root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tree.write(str(output_path), xml_declaration=True, encoding="utf-8")

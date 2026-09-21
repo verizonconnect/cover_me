@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.idea/
 .pytest_cache/
 .coverage
 htmlcov/
