@@ -13,7 +13,7 @@ from pathlib import Path
 
 from cover_me.instrumenter import instrument
 from cover_me.profile import Profile
-from cover_me.reporter import generate_opencover
+from cover_me.reporter import generate_opencover, generate_sonar
 from cover_me.html_reporter import generate_html
 
 
@@ -242,11 +242,13 @@ def cmd_report(args) -> None:
         (out_dir / f"{proc.name}.sql").write_text(source)
     print(f"Exported source to {source_dir}")
 
-    generate_opencover(procedures, tags_by_oid, profile, args.output, source_dir)
-    print(f"Generated {args.output}")
-
-    html_dir = args.output.parent / "html"
-    generate_html(args.output, html_dir)
+    if args.format == "sonar":
+        generate_sonar(procedures, tags_by_oid, profile, args.output, source_dir)
+        print(f"Generated {args.output} (SonarQube Generic Coverage)")
+    else:
+        generate_opencover(procedures, tags_by_oid, profile, args.output, source_dir)
+        print(f"Generated {args.output}")
+        generate_html(args.output, args.output.parent / "html")
     conn.close()
 
 
@@ -260,9 +262,11 @@ def main(argv: list[str] | None = None) -> None:
     p_untrace = sub.add_parser("untrace", help="Restore original functions")
     _add_db_args(p_untrace)
 
-    p_report = sub.add_parser("report", help="Generate OpenCover XML from trace")
+    p_report = sub.add_parser("report", help="Parse trace and generate a coverage report")
     p_report.add_argument("-f", "--file", type=Path, default=None, help="Trace file (postgres only)")
     p_report.add_argument("-o", "--output", type=Path, default=DEFAULT_OUTPUT_DIR / "opencover.xml")
+    p_report.add_argument("--format", choices=["opencover", "sonar"], default="opencover",
+                        help="Output format (default: opencover)")
     _add_db_args(p_report)
 
     args = parser.parse_args(argv)
