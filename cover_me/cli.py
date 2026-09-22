@@ -262,6 +262,7 @@ def main(argv: list[str] | None = None) -> None:
     p_untrace = sub.add_parser("untrace", help="Restore original functions")
     _add_db_args(p_untrace)
 
+    p_report = sub.add_parser("report", help="Parse trace and generate a coverage report")
     p_report.add_argument("-f", "--file", type=Path, default=None, help="Trace file (postgres only)")
     p_report.add_argument("-o", "--output", type=Path, default=DEFAULT_OUTPUT_DIR / "opencover.xml")
     p_report.add_argument("--format", choices=["opencover", "sonar"], default="opencover",
