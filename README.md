@@ -133,7 +133,8 @@ cover_me <command> [options]
 | `-c`, `--cache-dir`| Cache directory for original source     | `/coverage/cache`    |
 | `-f`, `--file`    | Trace file path (report, Postgres only)  | none                 |
 | `-o`, `--output`  | Output path for OpenCover XML            | `/coverage/opencover.xml` |
-| `-x`, `--exclude` | Comma-separated schemas to exclude (additive to .cover_me config) | none        |
+| `-x`, `--exclude-schemas` | Comma-separated schemas to exclude (additive to .cover_me config) | none        |
+| `-X`, `--exclude-procedures` | Comma-separated individual procedures to exclude by schema-qualified name, e.g. `qa.seed_qa_file_source` (additive to .cover_me config) | none |
 | `--config`        | Path to .cover_me config file             | `.cover_me` in CWD  |
 
 ---
@@ -229,6 +230,7 @@ open ./coverage/html/index.html
 - **Multiple test runs** — You can append multiple runs to the same trace file (`2>> trace.txt`) before generating the report.
 - **pgTAP compatibility** — pgTAP wraps each test in a transaction that rolls back. `RAISE WARNING` is not transactional, so all coverage hits are preserved.
 - **Schema filtering** — Use a `.cover_me` TOML config file in your repo root to exclude schemas from instrumentation. The file uses a `[excluded_schemas]` section with a `names` array. The `-x` CLI flag is additive to the config file. Only `pg_*`, `information_schema`, and `cover_me` are excluded by default — all other exclusions (including `public`, `pgtap`, `tap`, extension schemas) are the responsibility of the repo owner. Only VOLATILE functions and procedures are instrumented; STABLE and IMMUTABLE functions are always excluded.
+- **Procedure filtering** — To exclude individual procedures (rather than whole schemas), use an `[excluded_procedures]` section with a `names` array of schema-qualified names (`schema.name`), or the additive `-X` CLI flag. Matching is by name and ignores the argument signature, so all overloads are excluded. This is the recommended way to exclude test-only seed/fixture procedures that share a schema with instrumented code.
 - **Security** — Helper functions are installed in a dedicated `cover_me` schema with `EXECUTE` revoked from `PUBLIC`. The superuser running the trace has implicit access. This avoids tripping permission-auditing tests (e.g. checks that `PUBLIC` has no function access outside whitelisted schemas).
 - **Concurrent connections** — Multiple connections can exercise instrumented functions simultaneously. All `RAISE WARNING` output goes to the connection's stderr, so ensure all connections' stderr is captured.
 
@@ -522,11 +524,30 @@ names = [
 ]
 ```
 
+### Procedure Exclusions
+
+Exclude individual procedures without excluding their whole schema. Useful for
+test-only fixtures (e.g. QA seed procedures) that live in an otherwise-instrumented
+schema and are never called by unit tests — instrumenting them re-creates them at
+trace time, which can trip a "new/updated function has no tests" coverage gate.
+
+Procedures are matched by **schema-qualified name** (`schema.name`), independent of
+argument signature — all overloads of that name in that schema are excluded.
+
+```toml
+[excluded_procedures]
+names = [
+    "qa.seed_qa_file_source",
+    "qa.seed_qa_integration_log",
+    "transaction_command.seed_qa_transaction",
+]
+```
+
 ### Behaviour
 
 - **Hardcoded exclusions (always, not configurable):** `pg_*`, `information_schema`, `cover_me`
 - **Everything else** — including `public`, `pgtap`, `tap`, and extension schemas — is the repo owner's responsibility to exclude via this file.
-- The `-x` CLI flag is **additive** to the config file — schemas from both sources are merged.
+- The `-x` CLI flag is **additive** to the `[excluded_schemas]` config; `-X` is **additive** to `[excluded_procedures]`. Values from both sources are merged.
 - If no `.cover_me` file is found, only the hardcoded exclusions apply.
 - Pass `--config /path/to/.cover_me` to use a file from a non-default location.
 
