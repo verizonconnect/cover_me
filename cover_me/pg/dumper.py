@@ -19,7 +19,9 @@ _MODE_MAP = {"i": "IN", "o": "OUT", "b": "INOUT", "v": "VARIADIC", "t": "TABLE"}
 #   - cover_me (our own instrumentation schema)
 #
 # All other exclusions (public, pgtap, tap, postgis, etc.) are the
-# responsibility of the repo's .cover_me configuration file.
+# responsibility of the repo's .cover_me configuration file:
+#   - [excluded_schemas].names   → whole schemas (2nd %s bind)
+#   - [excluded_procedures].names → individual procs by schema.name (3rd %s bind)
 DUMP_SQL = """
 SELECT
     pro.oid::text,
@@ -55,6 +57,7 @@ WHERE pro.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
   AND nschema.nspname <> 'information_schema'
   AND nschema.nspname <> 'cover_me'
   AND nschema.nspname NOT IN (SELECT unnest(string_to_array(%s, ',')))
+  AND (nschema.nspname || '.' || pro.proname) NOT IN (SELECT unnest(string_to_array(%s, ',')))
   AND (pro.provolatile = 'v' OR pro.prokind = 'p')
 ORDER BY nschema.nspname, pro.proname;
 """
@@ -89,12 +92,25 @@ def _parse_row(row: dict) -> ProcedureDef:
     )
 
 
-def dump_procedures(connection, exclude_schemas: list[str] | None = None) -> list[ProcedureDef]:
-    """Fetch all PL/pgSQL procedures from the database."""
+def dump_procedures(
+    connection,
+    exclude_schemas: list[str] | None = None,
+    exclude_procedures: list[str] | None = None,
+) -> list[ProcedureDef]:
+    """Fetch all PL/pgSQL procedures from the database.
+
+    exclude_schemas: whole schemas to skip (by schema name).
+    exclude_procedures: individual procedures to skip by schema-qualified
+        name (``schema.name``), independent of signature — all overloads of
+        that name in that schema are skipped.
+    """
     if exclude_schemas is None:
         exclude_schemas = []
+    if exclude_procedures is None:
+        exclude_procedures = []
     exclude_csv = ",".join(exclude_schemas) if exclude_schemas else ""
+    exclude_proc_csv = ",".join(exclude_procedures) if exclude_procedures else ""
     with connection.cursor() as cur:
-        cur.execute(DUMP_SQL, (exclude_csv,))
+        cur.execute(DUMP_SQL, (exclude_csv, exclude_proc_csv))
         columns = [desc[0] for desc in cur.description]
         return [_parse_row(dict(zip(columns, row))) for row in cur.fetchall()]

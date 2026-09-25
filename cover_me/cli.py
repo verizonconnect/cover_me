@@ -60,6 +60,29 @@ def _get_excluded_schemas(args) -> list[str]:
     return schemas
 
 
+def _get_excluded_procedures(args) -> list[str]:
+    """Merge excluded procedures from .cover_me config file and -X CLI flag.
+
+    Procedures are excluded individually by their schema-qualified name
+    (``schema.name``), independent of argument signature — all overloads of
+    that name in that schema are excluded.
+
+    Sources (additive):
+        1. [excluded_procedures].names from the config file
+        2. Comma-separated values from --exclude-procedures (-X)
+    """
+    config = _load_config_file(getattr(args, "config", None))
+    procedures = list(config.get("excluded_procedures", {}).get("names", []))
+
+    # Merge CLI -X (additive)
+    cli_excludes = [p.strip() for p in args.exclude_procedures.split(",") if p.strip()]
+    for p in cli_excludes:
+        if p not in procedures:
+            procedures.append(p)
+
+    return procedures
+
+
 def _connect_pg(args):
     import psycopg2
     return psycopg2.connect(
@@ -127,6 +150,9 @@ def _add_db_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-c", "--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     parser.add_argument("-x", "--exclude-schemas", type=str, default="",
                         help="Comma-separated list of schemas to exclude (additive to .cover_me config)")
+    parser.add_argument("-X", "--exclude-procedures", type=str, default="",
+                        help="Comma-separated list of individual procedures to exclude by "
+                             "schema-qualified name, e.g. 'qa.seed_qa_file_source' (additive to .cover_me config)")
     parser.add_argument("--config", type=Path, default=None,
                         help="Path to .cover_me config file (default: .cover_me in current directory)")
 
@@ -147,11 +173,14 @@ def cmd_trace(args) -> None:
     cache_dir = args.cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
     exclude_schemas = _get_excluded_schemas(args)
+    exclude_procedures = _get_excluded_procedures(args)
 
     if exclude_schemas:
         print(f"Excluding schemas: {', '.join(exclude_schemas)}")
+    if exclude_procedures:
+        print(f"Excluding procedures: {', '.join(exclude_procedures)}")
 
-    procedures = mod["dump"](conn, exclude_schemas=exclude_schemas) if engine == "postgres" else mod["dump"](conn)
+    procedures = mod["dump"](conn, exclude_schemas=exclude_schemas, exclude_procedures=exclude_procedures) if engine == "postgres" else mod["dump"](conn)
     if not procedures:
         print("No stored procedures/functions found.", file=sys.stderr)
         conn.close()
@@ -208,8 +237,9 @@ def cmd_report(args) -> None:
     conn = _connect(args)
     cache_dir = args.cache_dir
     exclude_schemas = _get_excluded_schemas(args)
+    exclude_procedures = _get_excluded_procedures(args)
 
-    procedures = mod["dump"](conn, exclude_schemas=exclude_schemas) if engine == "postgres" else mod["dump"](conn)
+    procedures = mod["dump"](conn, exclude_schemas=exclude_schemas, exclude_procedures=exclude_procedures) if engine == "postgres" else mod["dump"](conn)
     if not procedures:
         print("No stored procedures/functions found.", file=sys.stderr)
         conn.close()

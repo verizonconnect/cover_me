@@ -176,6 +176,41 @@ class TestPostgresIntegration:
         finally:
             self._cleanup(pg_conn)
 
+    def test_exclude_procedures_by_schema_name(self, pg_conn):
+        """exclude_procedures skips only the named schema.name, not other procs."""
+        from cover_me.pg.dumper import dump_procedures
+
+        # add_numbers is created by the shared helper; add a second proc alongside it
+        self._create_test_function(pg_conn)
+        with pg_conn.cursor() as cur:
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION test_schema.sub_numbers(a INT, b INT)
+                RETURNS INT AS $$
+                BEGIN
+                    RETURN a - b;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+        pg_conn.commit()
+        try:
+            baseline = {f"{p.schema}.{p.name}" for p in dump_procedures(pg_conn)}
+            assert "test_schema.add_numbers" in baseline
+            assert "test_schema.sub_numbers" in baseline
+
+            # Exclude just one proc by schema-qualified name
+            excluded = {
+                f"{p.schema}.{p.name}"
+                for p in dump_procedures(
+                    pg_conn, exclude_procedures=["test_schema.add_numbers"]
+                )
+            }
+            assert "test_schema.add_numbers" not in excluded   # removed
+            assert "test_schema.sub_numbers" in excluded        # sibling untouched
+            # exactly one removed relative to baseline
+            assert baseline - excluded == {"test_schema.add_numbers"}
+        finally:
+            self._cleanup(pg_conn)
+
 
 # ---------------------------------------------------------------------------
 # MySQL integration tests
