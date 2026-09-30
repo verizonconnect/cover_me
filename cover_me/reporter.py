@@ -217,6 +217,12 @@ def generate_sonar(
     root = Element("coverage")
     root.set("version", "1")
 
+    # Multiple procedures can resolve to the same file path (e.g. overloaded
+    # functions). SonarQube rejects a report that lists the same path in more
+    # than one <file> element, so aggregate coverage per path before emitting.
+    #   per_path: path -> (covered_lines, branches)
+    per_path: dict[str, tuple[dict[int, bool], dict[int, list[int]]]] = {}
+
     for proc in sorted(procedures, key=lambda p: (p.schema, p.name)):
         proc_tags = tags_by_oid.get(proc.oid, [])
         if not proc_tags:
@@ -229,11 +235,9 @@ def generate_sonar(
         else:
             rel_path = f"{proc.schema}/{proc.name}.sql"
 
-        # Aggregate coverage by line number.
-        # covered_lines: line -> covered (bool)
-        # branches: line -> [branches_to_cover, covered_branches]
-        covered_lines: dict[int, bool] = {}
-        branches: dict[int, list[int]] = {}
+        # Aggregate coverage by line number, merging into any existing entry
+        # for this path.
+        covered_lines, branches = per_path.setdefault(rel_path, ({}, {}))
 
         for tag in proc_tags:
             if tag.tag_type not in (TagType.BLOCK, TagType.BRANCH, TagType.LOOP):
@@ -252,6 +256,9 @@ def generate_sonar(
                     covered += (1 if tp.false_count > 0 else 0)
                 branches[tag.line] = [to_cover, covered]
 
+    # Emit exactly one <file> element per unique path.
+    for rel_path in sorted(per_path):
+        covered_lines, branches = per_path[rel_path]
         if not covered_lines:
             continue
 
